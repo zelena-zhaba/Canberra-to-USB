@@ -1,0 +1,59 @@
+;PIO program that handles input from the canberra ADC
+
+.define ADC_BASE 0               ; ADC base pin is 0
+.define ADC_COUNT 14             ; ADC are pins 0-13
+.define TRIGGER 14               ; Trigger pin is pin 14
+
+.program input
+
+.wrap_target
+   wait 0 pin, TRIGGER  [25]  ; Wait for trigger and then 200ns 
+   in pins, ADC_COUNT   [0]   ; 
+   push block           [0]   ; Pushing data to FIFO
+.wrap               
+
+
+% c-sdk {
+// this is a raw helper function for use by the user which sets up the GPIO output, and configures the SM to output on a particular pin
+
+void input_program_init(PIO pio, 
+                        uint sm, 
+                        uint offset, 
+                        uint adc_base_pin,
+                        uint trigger_pin
+                        ) 
+{
+   
+   // Configure adc data input pins
+   for (uint pin = adc_base_pin; pin < adc_base_pin + 14; pin++) {
+        pio_gpio_init(pio, pin);
+        gpio_set_dir(pin, false);  // Set as input
+        gpio_set_pulls(pin, false, false);  // Disable pulls
+    }
+
+   // Configure trigger pin
+    pio_gpio_init(pio, trigger_pin);
+    gpio_set_dir(trigger_pin, false);
+
+   // Load default configuration
+   pio_sm_config c = input_program_get_default_config(offset);
+
+   //Map IN command to ADC input pins
+   sm_config_set_in_pins(&c, adc_base_pin);
+
+   // Autopush disabled
+   sm_config_set_in_shift(&c, true, false, 32);
+
+   // Set clock divider (adjust based on ADC timing)
+   sm_config_set_clkdiv(&c, 1.0f);
+
+   // Joining my FIFOs into one gigachad FIFO
+   sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+   
+   // Initialize state machine
+   pio_sm_init(pio, sm, offset, &c);
+
+   // Start state machine
+   pio_sm_set_enabled(pio, sm, true);
+}
+%}
