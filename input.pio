@@ -7,6 +7,9 @@
 .program input
 
 .wrap_target
+;
+;
+;
    wait 0 pin, TRIGGER  [25]  ; Wait for trigger and then 200ns 
    in pins, ADC_COUNT   [0]   ; 
    push block           [0]   ; Pushing data to FIFO
