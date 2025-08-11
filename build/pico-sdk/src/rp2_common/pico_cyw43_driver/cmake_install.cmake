@@ -39,12 +39,12 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/home/zelena-zhaba/Canberra-to-USB/build/pico-sdk/src/rp2_common/pico_cyw43_driver/cybt_shared_bus/cmake_install.cmake")
+  include("/home/zelena-zhaba/Documents/Canberra-to-USB/build/pico-sdk/src/rp2_common/pico_cyw43_driver/cybt_shared_bus/cmake_install.cmake")
 endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
 if(CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "/home/zelena-zhaba/Canberra-to-USB/build/pico-sdk/src/rp2_common/pico_cyw43_driver/install_local_manifest.txt"
+  file(WRITE "/home/zelena-zhaba/Documents/Canberra-to-USB/build/pico-sdk/src/rp2_common/pico_cyw43_driver/install_local_manifest.txt"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()
