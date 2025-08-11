@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 
+//коментар
 
 int main()
 {
