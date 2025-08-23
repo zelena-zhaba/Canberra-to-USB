@@ -1,17 +1,23 @@
 ;PIO program that handles input from the canberra ADC
 
-.define ADC_BASE 0               ; ADC base pin is 0
+;Input pins
+.define BASE_PIN 2               ; ADC base pin is 0
 .define ADC_COUNT 14             ; ADC are pins 0-13
-.define TRIGGER 14               ; Trigger pin is pin 14
+.define CDT 16                   ; Composite dead time
+.define READY 17
+.define INB 18
+
+;Output pins
+.define ACEPT 19
+.define ENDATA 20
+.define ENC 21
+.define OE 22
+
 
 .program input
 
 .wrap_target
-;
-;
-;
-;
-   wait 0 pin, TRIGGER  [25]  ; Wait for trigger and then 200ns 
+   wait 0 pin, READY    [25]  ; Wait for trigger and then 200ns 
    in pins, ADC_COUNT   [0]   ; 
    push block           [0]   ; Pushing data to FIFO
 .wrap               
@@ -24,7 +30,7 @@ void input_program_init(PIO pio,
                         uint sm, 
                         uint offset, 
                         uint adc_base_pin,
-                        uint trigger_pin
+                        uint ready_pin
                         ) 
 {
    
@@ -35,9 +41,9 @@ void input_program_init(PIO pio,
         gpio_set_pulls(pin, false, false);  // Disable pulls
     }
 
-   // Configure trigger pin
-    pio_gpio_init(pio, trigger_pin);
-    gpio_set_dir(trigger_pin, false);
+   // Configure ready pin
+    pio_gpio_init(pio, ready_pin);
+    gpio_set_dir(ready_pin, false);
 
    // Load default configuration
    pio_sm_config c = input_program_get_default_config(offset);

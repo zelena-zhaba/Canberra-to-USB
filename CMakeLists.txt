@@ -34,24 +34,28 @@ project(Canberra-to-USB C CXX ASM)
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
+add_executable(Canberra-to-USB 
+    Canberra-to-USB.c
+    )
 
-add_executable(Canberra-to-USB Canberra-to-USB.c )
+# Generate the PIO header file
+pico_generate_pio_header(Canberra-to-USB ${CMAKE_CURRENT_LIST_DIR}/input.pio)
 
 pico_set_program_name(Canberra-to-USB "Canberra-to-USB")
 pico_set_program_version(Canberra-to-USB "0.1")
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(Canberra-to-USB 0)
-pico_enable_stdio_usb(Canberra-to-USB 0)
+pico_enable_stdio_usb(Canberra-to-USB 1)
 
 # Add the standard library to the build
 target_link_libraries(Canberra-to-USB
-        pico_stdlib)
+        pico_stdlib
+        hardware_pio
+        hardware_dma)
 
 # Add the standard include files to the build
-target_include_directories(Canberra-to-USB PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}
-)
+target_include_directories(Canberra-to-USB PRIVATE ${CMAKE_BINARY_DIR})
 
 pico_add_extra_outputs(Canberra-to-USB)
 
