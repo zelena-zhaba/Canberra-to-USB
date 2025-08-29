@@ -135,7 +135,7 @@ int main(void) {
 
 	// (heartbeat removed)
 
-	// Main loop: process buffers when ready and print heartbeat
+	// Main loop: process buffers when ready
 	while (1) {
 	// main loop
 
