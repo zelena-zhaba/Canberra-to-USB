@@ -167,9 +167,27 @@ int main(void) {
 			}
 
 			// Write to USB CDC if connected
+			// Replaced binary CDC write with a printf-based diagnostic so the
+			// host serial monitor can display readable values during debugging.
 			if (tud_cdc_connected() && out_len > 0) {
-				tud_cdc_write(outbuf, out_len);
-				tud_cdc_write_flush();
+				// Throttle debug prints so the USB CDC endpoint isn't flooded.
+				// Print at most once per DEBUG_PRINT_INTERVAL_MS and only the
+				// first few samples of a segment.
+				const uint32_t DEBUG_PRINT_INTERVAL_MS = 250;
+				const int SAMPLES_TO_PRINT = 8;
+				static uint32_t last_debug_print_ms = 0;
+				uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+				if ((now_ms - last_debug_print_ms) >= DEBUG_PRINT_INTERVAL_MS) {
+					last_debug_print_ms = now_ms;
+					int avail = (int)(DMA_SEG_WORDS);
+					int n = SAMPLES_TO_PRINT < avail ? SAMPLES_TO_PRINT : avail;
+					for (int si = 0; si < n; ++si) {
+						uint16_t s = (uint16_t)(outbuf[si*2] | (outbuf[si*2 + 1] << 8));
+						printf("%04x ", s);
+					}
+					printf("\r\n");
+					fflush(stdout);
+				}
 			}
 
 			// advance read index by one segment
