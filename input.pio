@@ -14,10 +14,18 @@
 
 
 .program input
+;Pull ENC low from C to enable ADC by serial command
 .wrap_target
-   wait 0 pin, READY    [25]  ; Wait for trigger and then 200ns 
+   wait 0 pin, READY    [0]  ;
+   ;Push ENDATA HIGH
+   ;Go to shortcut if INB is LOW
+   ;Insert delay so ADC can respond to ENDATA
    in pins, ADC_COUNT   [0]   ; Shift data from data pins into ISR; autopush will move to FIFO
+   ;Insert shortcut
+   ;Pull ENDATA LOW
+   ;Pull ACEPT LOW
    wait 1 pin, READY    [0]   ;
+   ;Push ACEPT HIGH 
 .wrap               
 
 
