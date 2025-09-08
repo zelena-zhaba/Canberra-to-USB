@@ -54,10 +54,8 @@ void input_program_init(PIO pio,
    sm_config_set_jmp_pin(&c, ready_pin);
 
    // Enable autopush when ADC_COUNT bits have been shifted in.
-   // Use shift_right=false to make the pushed word MSB-aligned when the ADC
-   // outputs MSB-first. This matches the C-side extraction which expects
-   // the ADC bits in the high bits of the pushed word.
-   sm_config_set_in_shift(&c, false, true, 14);
+   // shift_right=true (Adjust to flip the bit order)
+   sm_config_set_in_shift(&c, true, true, 14);
 
    // Set clock divider (adjust based on ADC timing)
    sm_config_set_clkdiv(&c, 1.0f);
