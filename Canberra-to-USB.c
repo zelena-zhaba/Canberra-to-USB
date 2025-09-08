@@ -22,28 +22,41 @@
 
 #include "input.pio.h"
 
-// DMA buffer size (words) and buffers - file scope so IRQ handler can access
+// DMA buffer configuration: split the total buffer into smaller segments
+// so the CPU can process shorter chunks (lower latency) using a circular buffer.
 #define DMA_BUF_WORDS 4096
-static volatile uint32_t dma_buf0[DMA_BUF_WORDS];
-static volatile uint32_t dma_buf1[DMA_BUF_WORDS];
-static volatile bool buf0_ready = false;
-static volatile bool buf1_ready = false;
-static volatile bool buf0_active = true; // DMA currently writing to buf0
-static int dma_chan = -1;
+#define SEGMENT_WORDS 512
+#define SEGMENT_COUNT (DMA_BUF_WORDS / SEGMENT_WORDS)
 
-// DMA IRQ handler: mark buffer ready and switch DMA write address
+static volatile uint32_t dma_buf[SEGMENT_COUNT][SEGMENT_WORDS];
+static volatile bool seg_ready[SEGMENT_COUNT];   // true when segment has been filled by DMA
+static volatile int dma_chan = -1;
+static volatile int write_idx = 0; // segment index DMA is currently (or just finished) writing to
+static volatile int read_idx = 0;  // segment index next to be consumed by CPU
+static volatile bool overflow = false;
+
+// DMA IRQ handler: mark current segment ready, advance write pointer and
+// switch DMA write address to the next segment. If the next segment is
+// still marked ready, we have an overrun — drop the oldest segment to free space.
 static void dma_handler(void) {
 	if (dma_chan >= 0) dma_hw->ints0 = 1u << dma_chan;
 
-	if (buf0_active) {
-		buf0_ready = true;
-		dma_channel_set_write_addr(dma_chan, (void *)dma_buf1, true);
-		buf0_active = false;
-	} else {
-		buf1_ready = true;
-		dma_channel_set_write_addr(dma_chan, (void *)dma_buf0, true);
-		buf0_active = true;
+	// mark the segment we just finished as ready
+	seg_ready[write_idx] = true;
+
+	int next = (write_idx + 1) % SEGMENT_COUNT;
+
+	// if next segment hasn't been consumed yet, we have an overrun
+	if (seg_ready[next]) {
+		overflow = true;
+		// drop the oldest segment to make room
+		read_idx = (read_idx + 1) % SEGMENT_COUNT;
+		seg_ready[next] = false; // consider it free for writing
 	}
+
+	// advance write index and point DMA at the next segment
+	write_idx = next;
+	dma_channel_set_write_addr(dma_chan, (void *)dma_buf[write_idx], true);
 }
 
 int main(void) {
@@ -69,8 +82,10 @@ int main(void) {
 	uint offset = pio_add_program(pio, &input_program);
 	input_program_init(pio, sm, offset, BASE_PIN, READY_PIN);
 
-	// Precompute left-aligned mask for ADC_COUNT bits (shift_right = false -> bits are MSB-aligned)
-	const uint32_t mask = ((1u << ADC_COUNT) - 1u) << (32 - ADC_COUNT);
+	// Precompute right-aligned mask for ADC_COUNT bits. The PIO is configured
+	// with shift_right=true and autopush, so pushed words are right-aligned
+	// in the 32-bit word (LSB side).
+	const uint32_t mask = (1u << ADC_COUNT) - 1u;
 
 	// Claim DMA channel and configure
 	dma_chan = dma_claim_unused_channel(true);
@@ -80,11 +95,11 @@ int main(void) {
 	channel_config_set_write_increment(&cfg, true); // write through buffer
 	channel_config_set_dreq(&cfg, DREQ_PIO0_RX0 + sm);
 
-	// Configure DMA to start writing into buf0
+	// Configure DMA to start writing into segment 0
 	dma_channel_configure(dma_chan, &cfg,
-		(void *)dma_buf0,                // dest
+		(void *)dma_buf[0],              // dest (first segment)
 		&pio->rxf[sm],                   // src (PIO RX FIFO for this SM)
-		DMA_BUF_WORDS,                   // transfer count
+		SEGMENT_WORDS,                   // transfer count per segment
 		true);                           // start immediately
 
 	// Hook up IRQ0 for DMA channel completion
@@ -92,26 +107,24 @@ int main(void) {
 	irq_set_exclusive_handler(DMA_IRQ_0, dma_handler);
 	irq_set_enabled(DMA_IRQ_0, true);
 
-	// Main loop: process buffers when ready and print numeric samples only
+	// Main loop: process ready segments from the ring buffer and print samples
 	while (1) {
-		if (buf0_ready) {
-			for (int i = 0; i < DMA_BUF_WORDS; ++i) {
-				uint32_t raw = dma_buf0[i];
-				uint16_t sample = (uint16_t)((raw & mask) >> (32 - ADC_COUNT));
+		// if the next segment is ready, consume it
+		if (seg_ready[read_idx]) {
+			// process SEGMENT_WORDS words from dma_buf[read_idx]
+			for (int i = 0; i < SEGMENT_WORDS; ++i) {
+				uint32_t raw = dma_buf[read_idx][i];
+				uint16_t sample = (uint16_t)(raw & mask);
+				// invert polarity: ADC outputs inverted (high -> 0, low -> 1)
+				sample ^= (uint16_t)mask;
 				// print numeric sample only (no letters)
 				printf("%u\r\n", sample);
 			}
-			buf0_ready = false;
-		}
 
-		if (buf1_ready) {
-			for (int i = 0; i < DMA_BUF_WORDS; ++i) {
-				uint32_t raw = dma_buf1[i];
-				uint16_t sample = (uint16_t)((raw & mask) >> (32 - ADC_COUNT));
-				// print numeric sample only (no letters)
-				printf("%u\r\n", sample);
-			}
-			buf1_ready = false;
+			// mark consumed and advance read pointer
+			seg_ready[read_idx] = false;
+			read_idx = (read_idx + 1) % SEGMENT_COUNT;
+			continue; // try to consume more without sleeping
 		}
 
 		// small sleep to yield to interrupts and avoid busy loop

@@ -11,11 +11,9 @@
 .define ACEPT 19                 ; Confirm that data was recieved GP19
 .define ENDATA 20                ; Open the gates to read the data GP20
 .define ENC 21                   ; Enables the ADC if LOW GP21
-.define OE 22                    ; Enables HW221 level shifter if LOW GP22
 
 
 .program input
-
 .wrap_target
    wait 0 pin, READY    [25]  ; Wait for trigger and then 200ns 
    in pins, ADC_COUNT   [0]   ; Shift data from data pins into ISR; autopush will move to FIFO
@@ -54,8 +52,8 @@ void input_program_init(PIO pio,
    sm_config_set_jmp_pin(&c, ready_pin);
 
    // Enable autopush when ADC_COUNT bits have been shifted in.
-   // shift_right=true (Adjust to flip the bit order)
-   sm_config_set_in_shift(&c, true, true, 14);
+   // shift_right=false
+   sm_config_set_in_shift(&c, false, true, 14);
 
    // Set clock divider (adjust based on ADC timing)
    sm_config_set_clkdiv(&c, 1.0f);
