@@ -10,23 +10,32 @@
 ;Output pins
 .define ACEPT 19                 ; Confirm that data was recieved GP19
 .define ENDATA 20                ; Open the gates to read the data GP20
-.define ENC 21                   ; Enables the ADC if LOW GP21
 
+;Pull ENC low from C to enable ADC by serial command
 
 .program input
-;Pull ENC low from C to enable ADC by serial command
+.side_set 2
+; note: All the outputs of the ADC are inverted at the source
+; sideset bit0 -> ACEPT (GP19), bit1 -> ENDATA (GP20)
+; 0b11 = both HIGH (idle), 0b01 = ACEPT HIGH, ENDATA LOW (gating data),
+; 0b10 = ACEPT LOW, ENDATA HIGH (ack cleared)
+
+nop      side 0b11               ; Idle state on reset
 .wrap_target
-   wait 0 pin, READY    [0]  ;
-   ;Push ENDATA HIGH
-   ;Go to shortcut if INB is LOW
-   ;Insert delay so ADC can respond to ENDATA
-   in pins, ADC_COUNT   [0]   ; Shift data from data pins into ISR; autopush will move to FIFO
-   ;Insert shortcut
-   ;Pull ENDATA LOW
-   ;Pull ACEPT LOW
-   wait 1 pin, READY    [0]   ;
-   ;Push ACEPT HIGH 
-.wrap               
+   wait 1 gpio READY side 0b11   ; Wait until READY asserted (assumed active high)
+   nop       side 0b01           ; Pull ENDATA low while keeping ACEPT high (start transfer)
+   jmp  pin read_data side 0b01  ; If INB (jmp pin) HIGH capture sample
+   jmp      skip_read side 0b01  ; Else discard
+read_data:
+   nop       side 0b01 [7]       ; Settle delay (split due to 3-bit delay field)
+   nop       side 0b01 [7]
+   nop       side 0b01 [5]       ; ~19 cycles total
+   in   pins, ADC_COUNT side 0b01; Shift in 14 bits (autopush enabled)
+skip_read:
+   nop       side 0b10           ; Raise ENDATA (stop), drop ACEPT low (prepare ack)
+   wait 0 gpio READY side 0b10   ; Wait for READY to deassert
+   nop       side 0b11           ; Return ACEPT & ENDATA high (idle)
+.wrap
 
 
 % c-sdk {
@@ -35,8 +44,7 @@
 void input_program_init(PIO pio, 
                         uint sm, 
                         uint offset, 
-                        uint adc_base_pin,
-                        uint ready_pin
+                        uint adc_base_pin
                         ) 
 {
    
@@ -47,8 +55,15 @@ void input_program_init(PIO pio,
         gpio_set_pulls(pin, false, false);  // Disable pulls
     }
 
-   // Configure ready pin
-    pio_gpio_init(pio, ready_pin);
+
+   // Configure CDT, READY and INB pins as inputs so they're understood by the system
+   // CDT = GP16, READY = GP17, INB = GP18 (per PIO defines)
+   pio_gpio_init(pio, 16);
+   gpio_set_dir(16, false);
+   pio_gpio_init(pio, 17);
+   gpio_set_dir(17, false);
+   pio_gpio_init(pio, 18);
+   gpio_set_dir(18, false);
 
    // Load default configuration
    pio_sm_config c = input_program_get_default_config(offset);
@@ -56,8 +71,19 @@ void input_program_init(PIO pio,
    // Map IN command to ADC input pins
    sm_config_set_in_pins(&c, adc_base_pin);
 
-   // Make WAIT/IRQ use the READY pin
-   sm_config_set_jmp_pin(&c, ready_pin);
+   // Make JMP use the INB pin
+   sm_config_set_jmp_pin(&c, 18);
+
+   // Configure sideset for the two control outputs (ACEPT=GP19, ENDATA=GP20)
+   // sideset 2 bits (LSB -> GP19)
+   sm_config_set_sideset(&c, 2, false, false);
+   sm_config_set_sideset_pins(&c, 19);
+
+   // Initialize those pins (PIO will drive them, but init here for clarity)
+   pio_gpio_init(pio, 19);
+   gpio_set_dir(19, true);
+   pio_gpio_init(pio, 20);
+   gpio_set_dir(20, true);
 
    // Enable autopush when ADC_COUNT bits have been shifted in.
    // shift_right=false

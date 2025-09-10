@@ -18,7 +18,6 @@
 // Local constants - must be visible before including the generated PIO header
 #define ADC_COUNT 14
 #define BASE_PIN 2
-#define READY_PIN 17
 
 #include "input.pio.h"
 
@@ -80,7 +79,7 @@ int main(void) {
 
 	// Load and initialise PIO program (this configures the input pins)
 	uint offset = pio_add_program(pio, &input_program);
-	input_program_init(pio, sm, offset, BASE_PIN, READY_PIN);
+	input_program_init(pio, sm, offset, BASE_PIN);
 
 	// Precompute right-aligned mask for ADC_COUNT bits. The PIO is configured
 	// with shift_right=true and autopush, so pushed words are right-aligned
