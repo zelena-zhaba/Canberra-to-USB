@@ -10,31 +10,34 @@
 ;Output pins
 .define ACEPT 19                 ; Confirm that data was recieved GP19
 .define ENDATA 20                ; Open the gates to read the data GP20
+.define ENC 21                   ; ENC - ENable Converter. Active LOW.
 
-;Pull ENC low from C to enable ADC by serial command
+; Pull ENC low from C code (PIO does not drive ENC)
 
 .program input
-.side_set 2
+.side_set 2         ; 2 side-set bits: values: ACEPT(bit0), ENDATA(bit1); delay field has 3 bits (0..7)
 ; note: All the outputs of the ADC are inverted at the source
 ; sideset bit0 -> ACEPT (GP19), bit1 -> ENDATA (GP20)
 ; 0b11 = both HIGH (idle), 0b01 = ACEPT HIGH, ENDATA LOW (gating data),
 ; 0b10 = ACEPT LOW, ENDATA HIGH (ack cleared)
 
-nop      side 0b11               ; Idle state on reset
+nop      side 0b11                ; Idle state on reset (ACEPT=1, ENDATA=1)
 .wrap_target
-   wait 0 gpio READY side 0b11   ; Wait until READY asserted (assumed active high)
-   nop       side 0b01           ; Pull ENDATA low while keeping ACEPT high (start transfer)
-   jmp  pin read_data side 0b01  ; If INB (jmp pin) HIGH capture sample
-   jmp      skip_read side 0b01  ; Else discard
+    wait 1 gpio READY side 0b11    ; READY active-low: wait for it to assert (go low)
+    nop       side 0b01            ; Gate open: ENDATA=0, ACEPT=1
+    jmp  pin read_data side 0b01   ; If INB high capture
+    jmp      skip_read side 0b01   ; Else skip
 read_data:
-   nop       side 0b01 [7]       ; Settle delay (split due to 3-bit delay field)
-   nop       side 0b01 [7]       ; 
-   nop       side 0b01 [7]       ; 24 cycles total (192ns)
-   in   pins, ADC_COUNT side 0b01; Shift in 14 bits (autopush enabled)
+    ; Delay emulation: each [3] adds 3 extra cycles (4 incl. instr). Adjust count as needed.
+    nop       side 0b01 [3]
+    nop       side 0b01 [3]
+    nop       side 0b01 [3]
+    nop       side 0b01 [3]
+    in   pins, ADC_COUNT side 0b01 ; Shift in 14 bits (autopush)
 skip_read:
-   nop       side 0b10           ; Raise ENDATA (stop), drop ACEPT low (prepare ack)
-   wait 1 gpio READY side 0b10   ; Wait for READY to deassert
-   nop       side 0b11           ; Return ACEPT & ENDATA high (idle)
+    nop       side 0b10            ; ENDATA=1 (close), ACEPT=0 (ack phase)
+    wait 0 gpio READY side 0b10    ; Wait for READY to deassert (go high)
+    nop       side 0b11            ; Return idle (both high)
 .wrap
 
 
@@ -75,7 +78,7 @@ void input_program_init(PIO pio,
    sm_config_set_jmp_pin(&c, 18);
 
    // Configure sideset for the two control outputs (ACEPT=GP19, ENDATA=GP20)
-   // sideset 2 bits (LSB -> GP19)
+   // sideset 2 bits (LSB -> GP19, next -> GP20)
    sm_config_set_sideset(&c, 2, false, false);
    sm_config_set_sideset_pins(&c, 19);
 
@@ -84,13 +87,14 @@ void input_program_init(PIO pio,
    gpio_set_dir(19, true);
    pio_gpio_init(pio, 20);
    gpio_set_dir(20, true);
+   // Do NOT configure pin 21 (ENC) here; controlled from C
 
    // Enable autopush when ADC_COUNT bits have been shifted in.
    // shift_right=true to right-align samples in RX FIFO (LSB side)
-   sm_config_set_in_shift(&c, true, true, 14);
+   sm_config_set_in_shift(&c, false, true, 14);
 
    // Set clock divider (adjust based on ADC timing)
-   sm_config_set_clkdiv(&c, 1.0f);
+   sm_config_set_clkdiv(&c, 5.0f);
 
    // Joining my FIFOs into one gigachad FIFO
    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
