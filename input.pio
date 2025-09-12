@@ -22,18 +22,18 @@
 
 nop      side 0b11               ; Idle state on reset
 .wrap_target
-   wait 1 gpio READY side 0b11   ; Wait until READY asserted (assumed active high)
+   wait 0 gpio READY side 0b11   ; Wait until READY asserted (assumed active high)
    nop       side 0b01           ; Pull ENDATA low while keeping ACEPT high (start transfer)
    jmp  pin read_data side 0b01  ; If INB (jmp pin) HIGH capture sample
    jmp      skip_read side 0b01  ; Else discard
 read_data:
    nop       side 0b01 [7]       ; Settle delay (split due to 3-bit delay field)
-   nop       side 0b01 [7]
-   nop       side 0b01 [5]       ; ~19 cycles total
+   nop       side 0b01 [7]       ; 
+   nop       side 0b01 [7]       ; 24 cycles total (192ns)
    in   pins, ADC_COUNT side 0b01; Shift in 14 bits (autopush enabled)
 skip_read:
    nop       side 0b10           ; Raise ENDATA (stop), drop ACEPT low (prepare ack)
-   wait 0 gpio READY side 0b10   ; Wait for READY to deassert
+   wait 1 gpio READY side 0b10   ; Wait for READY to deassert
    nop       side 0b11           ; Return ACEPT & ENDATA high (idle)
 .wrap
 
@@ -86,8 +86,8 @@ void input_program_init(PIO pio,
    gpio_set_dir(20, true);
 
    // Enable autopush when ADC_COUNT bits have been shifted in.
-   // shift_right=false
-   sm_config_set_in_shift(&c, false, true, 14);
+   // shift_right=true to right-align samples in RX FIFO (LSB side)
+   sm_config_set_in_shift(&c, true, true, 14);
 
    // Set clock divider (adjust based on ADC timing)
    sm_config_set_clkdiv(&c, 1.0f);
