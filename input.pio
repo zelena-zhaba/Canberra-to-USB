@@ -1,44 +1,42 @@
-;PIO program that handles input from the canberra ADC
+;PIO program that handles input from the Canberra ADC
 
 ;Input pins
 .define BASE_PIN 2               ; ADC base pin is GP02
-.define ADC_COUNT 14             ; ADC are pins GP02-GP15
-.define CDT 16                   ; Composite dead time GP16
-.define READY 17                 ; Ready signal from the ADC GP17
-.define INB 18                   ; Discard data if LOW GP18
+.define ADC_COUNT 14             ; ADC data pins are GP02-GP15
+.define CDT 16                   ; Composite dead time (Active LOW)
+.define READY 17                 ; Ready signal from the ADC (Active LOW)
+.define INB 18                   ; Discard data if LOW 
 
 ;Output pins
 .define ACEPT 19                 ; Confirm that data was recieved GP19
 .define ENDATA 20                ; Open the gates to read the data GP20
-.define ENC 21                   ; ENC - ENable Converter. Active LOW.
 
 ; Pull ENC low from C code (PIO does not drive ENC)
 
-.program input
-.side_set 2         ; 2 side-set bits: values: ACEPT(bit0), ENDATA(bit1); delay field has 3 bits (0..7)
-; note: All the outputs of the ADC are inverted at the source
-; sideset bit0 -> ACEPT (GP19), bit1 -> ENDATA (GP20)
-; 0b11 = both HIGH (idle), 0b01 = ACEPT HIGH, ENDATA LOW (gating data),
-; 0b10 = ACEPT LOW, ENDATA HIGH (ack cleared)
 
-nop      side 0b11                ; Idle state on reset (ACEPT=1, ENDATA=1)
+
+
+.program input
+; 0b11 = Both HIGH (idle, active low)
+; 0b01 = ACEPT HIGH, ENDATA LOW (read data)
+; 0b10 = ACEPT LOW, ENDATA HIGH (confirm recieved)
+
+set pins, 0b11
 .wrap_target
-    wait 1 gpio READY side 0b11    ; READY active-low: wait for it to assert (go low)
-    nop       side 0b01            ; Gate open: ENDATA=0, ACEPT=1
-    jmp  pin read_data side 0b01   ; If INB high capture
-    jmp      skip_read side 0b01   ; Else skip
+    wait 0 pin 15           ; READY active-low. Whait for data
+    set pins, 0b01          ; Ask ADC to output data
+    jmp pin read_data       ; If INB high - capture
+    jmp skip_read           ; Else skip
 read_data:
-    ; Delay emulation: each [3] adds 3 extra cycles (4 incl. instr). Adjust count as needed.
-    nop       side 0b01 [3]
-    nop       side 0b01 [3]
-    nop       side 0b01 [3]
-    nop       side 0b01 [3]
-    in   pins, ADC_COUNT side 0b01 ; Shift in 14 bits (autopush)
+    nop [24]                ; Adjust delay for stability
+    in pins, 14             ; Shift in 14 bits GP02-GP15 (autopush to FIFO is enabled)
 skip_read:
-    nop       side 0b10            ; ENDATA=1 (close), ACEPT=0 (ack phase)
-    wait 0 gpio READY side 0b10    ; Wait for READY to deassert (go high)
-    nop       side 0b11            ; Return idle (both high)
+    set pins, 0b10          ; Confirm data is recieved    
+    wait 1 pin 15           ; Wait for READY to reset
+    set pins, 0b11          ; Return to idle
 .wrap
+
+
 
 
 % c-sdk {
@@ -46,63 +44,44 @@ skip_read:
 
 void input_program_init(PIO pio, 
                         uint sm, 
-                        uint offset, 
-                        uint adc_base_pin
+                        uint offset 
                         ) 
-{
+    {
+    //Get default configs.
+    pio_sm_config c = input_program_get_default_config(offset);
    
-   // Configure adc data input pins
-   for (uint pin = adc_base_pin; pin < adc_base_pin + 14; pin++) {
-        pio_gpio_init(pio, pin);
-        gpio_set_dir(pin, false);  // Set as input
-        gpio_set_pulls(pin, false, false);  // Disable pulls
-    }
+    // Set this pin's GPIO function (connect PIO to the pad)
+    for (uint pin = 2; pin < 2 + 14; pin++) {
+        pio_gpio_init(pio, pin);}       // ADC00-ADC13 pins
+    pio_gpio_init(pio, 16);             // CDT pin
+    pio_gpio_init(pio, 17);             // READY pin
+    pio_gpio_init(pio, 18);             // INB pin
+    pio_gpio_init(pio, 19);             // ACEPT pin
+    pio_gpio_init(pio, 20);             // ENDATA pin
 
+    // Set the input base pin 
+    sm_config_set_in_pins(&c, 2);
 
-   // Configure CDT, READY and INB pins as inputs so they're understood by the system
-   // CDT = GP16, READY = GP17, INB = GP18 (per PIO defines)
-   pio_gpio_init(pio, 16);
-   gpio_set_dir(16, false);
-   pio_gpio_init(pio, 17);
-   gpio_set_dir(17, false);
-   pio_gpio_init(pio, 18);
-   gpio_set_dir(18, false);
+    // Make JMP use the INB pin
+    sm_config_set_jmp_pin(&c, 18);
 
-   // Load default configuration
-   pio_sm_config c = input_program_get_default_config(offset);
+    // Set the output base pin and pin count
+    sm_config_set_set_pins(&c, 19, 2);
 
-   // Map IN command to ADC input pins
-   sm_config_set_in_pins(&c, adc_base_pin);
+    // Map output pins to output
+    pio_sm_set_consecutive_pindirs(pio, sm, 19, 2, true);
 
-   // Make JMP use the INB pin
-   sm_config_set_jmp_pin(&c, 18);
+    // Enable autopush when ADC_COUNT bits have been shifted in.
+    sm_config_set_in_shift(&c, false, true, 14);
 
-   // Configure sideset for the two control outputs (ACEPT=GP19, ENDATA=GP20)
-   // sideset 2 bits (LSB -> GP19, next -> GP20)
-   sm_config_set_sideset(&c, 2, false, false);
-   sm_config_set_sideset_pins(&c, 19);
+    // Joining my FIFOs into one gigachad FIFO
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
 
-   // Initialize those pins (PIO will drive them, but init here for clarity)
-   pio_gpio_init(pio, 19);
-   gpio_set_dir(19, true);
-   pio_gpio_init(pio, 20);
-   gpio_set_dir(20, true);
-   // Do NOT configure pin 21 (ENC) here; controlled from C
+    // Set clock speed. System clock is 125Mhz = 8ns/cycle
+    sm_config_set_clkdiv(&c, 1.0f);
 
-   // Enable autopush when ADC_COUNT bits have been shifted in.
-   // shift_right=true to right-align samples in RX FIFO (LSB side)
-   sm_config_set_in_shift(&c, false, true, 14);
-
-   // Set clock divider (adjust based on ADC timing)
-   sm_config_set_clkdiv(&c, 5.0f);
-
-   // Joining my FIFOs into one gigachad FIFO
-   sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
-   
-   // Initialize state machine
-   pio_sm_init(pio, sm, offset, &c);
-
-   // Start state machine
-   pio_sm_set_enabled(pio, sm, true);
+    // Initialize state machine
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
 }
 %}
