@@ -63,15 +63,3 @@ int main(void) {
 }
 
 
-
-
-
-
-
-
-
-
-
-// Set X register to 1
-// pio_sm_exec(pio, sm, pio_encode_set(pio_x, 1));
-
