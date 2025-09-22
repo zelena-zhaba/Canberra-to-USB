@@ -20,14 +20,25 @@
 
 #include "input.pio.h"
 
+
+void FIFO_to_USB(PIO pio, int sm) {
+    // Mask to extract 14-bit sample from 32-bit word
+    const uint16_t mask = (1u << ADC_COUNT) - 1u;
+    // Block until a 32-bit word (containing one 14-bit sample) is available
+    while (pio_sm_is_rx_fifo_empty(pio, sm)) tight_loop_contents();
+    uint32_t raw = pio->rxf[sm];
+    uint16_t sample = (uint16_t)(raw & mask); // right-aligned by PIO
+    // Invert since lines are inverted at source
+    sample ^= mask;
+    printf("%u\r\n", sample);
+}
+
+
+
 int main(void) {
+    // Initialize stdio
     stdio_init_all();
     sleep_ms(150); 
-
-    // ENC active-low to enable ADC 
-    gpio_init(21);
-    gpio_set_dir(21, GPIO_OUT);
-    gpio_put(21, 0);
 
     // Level shifter enable 
     gpio_init(22);
@@ -40,15 +51,27 @@ int main(void) {
     uint offset = pio_add_program(pio, &input_program);
     input_program_init(pio, sm, offset);
 
-    const uint16_t mask = (1u << ADC_COUNT) - 1u;
+    // Main loop: listen to serial input and print data from FIFO to USB
     while (true) {
-        // Block until a 32-bit word (containing one 14-bit sample) is available
-        while (pio_sm_is_rx_fifo_empty(pio, sm)) tight_loop_contents();
-        uint32_t raw = pio->rxf[sm];
-        uint16_t sample = (uint16_t)(raw & mask); // right-aligned by PIO
-        // Invert since lines are inverted at source
-        sample ^= mask;
-        printf("%u\r\n", sample);
+        int input = getchar_timeout_us(0);
+            if (input == '1') pio_sm_exec(pio, sm, pio_encode_set(pio_x, 1));
+            if (input == '0') pio_sm_exec(pio, sm, pio_encode_set(pio_x, 0));
+            FIFO_to_USB(pio, sm);
     }
-        return 0;
-    }
+
+    return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+// Set X register to 1
+// pio_sm_exec(pio, sm, pio_encode_set(pio_x, 1));
+
