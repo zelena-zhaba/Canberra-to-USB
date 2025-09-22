@@ -15,7 +15,6 @@
 
 
 
-
 .program input
     set pins, 0b101             ; Initial conditions: ACEPT and ENC HIGH (disabled), ENDATA LOW (active).
 start:
