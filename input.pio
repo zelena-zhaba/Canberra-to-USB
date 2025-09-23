@@ -19,14 +19,12 @@
     set pins, 0b101             ; Initial conditions: ACEPT and ENC HIGH (disabled), ENDATA LOW (active).
 start:
     jmp !x start [31]       ; Wait for x to be 1. Delay for lighter load.
-    set pins, 0b001 [18]    ; Drive ENC LOW, add delay if needed.
+    set pins, 0b001 [31]    ; Drive ENC LOW, add delay if needed.
     set pins, 0b000 [0]
-        ;wait 1 pin 15 - maybe wait for READY pin high? Or delay in previous line.
-    set pins, 0b010 [31]    ; Likeley delay not needed
-    set pins, 0b011         ; If delay not needed combine with previous line
-
+    wait 1 pin 17 
+    set pins, 0b011         
 .wrap_target
-    wait 0 pin 15           ; READY active-low. Whait for data
+    wait 0 pin 17           ; READY active-low. Whait for data
     set pins, 0b001         ; Ask ADC to output data
     jmp pin read_data       ; If INB high - capture
     jmp skip_read           ; Else skip
@@ -35,7 +33,7 @@ read_data:
     in pins, 14             ; Shift in 14 bits GP02-GP15 (autopush to FIFO is enabled)
 skip_read:
     set pins, 0b010         ; Confirm data is recieved    
-    wait 1 pin 15           ; Wait for READY to reset
+    wait 1 pin 17           ; Wait for READY to reset
     set pins, 0b011         ; Return to idle
     ;jmp to start if scratch register x=0
     jmp !x start            ; Go back to start if register x was set to 0 from C
@@ -63,6 +61,7 @@ void input_program_init(PIO pio,
     pio_gpio_init(pio, 18);             // INB pin
     pio_gpio_init(pio, 19);             // ACEPT pin
     pio_gpio_init(pio, 20);             // ENDATA pin
+    pio_gpio_init(pio, 21);             // ENC pin
 
     // Set the input base pin 
     sm_config_set_in_pins(&c, 2);
@@ -72,6 +71,11 @@ void input_program_init(PIO pio,
 
     // Set the output base pin and pin count
     sm_config_set_set_pins(&c, 19, 3);
+
+    // Configure output pin Current
+    gpio_set_drive_strength(19, GPIO_DRIVE_STRENGTH_12MA);
+    gpio_set_drive_strength(20, GPIO_DRIVE_STRENGTH_12MA);
+    gpio_set_drive_strength(21, GPIO_DRIVE_STRENGTH_12MA);
 
     // Map output pins to output
     pio_sm_set_consecutive_pindirs(pio, sm, 19, 3, true);

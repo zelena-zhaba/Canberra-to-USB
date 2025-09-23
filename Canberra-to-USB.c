@@ -53,13 +53,17 @@ int main(void) {
 
     // Main loop: listen to serial input and print data from FIFO to USB
     while (true) {
-        int input = getchar_timeout_us(0);
-            if (input == '1') pio_sm_exec(pio, sm, pio_encode_set(pio_x, 1));
-            if (input == '0') pio_sm_exec(pio, sm, pio_encode_set(pio_x, 0));
-            FIFO_to_USB(pio, sm);
+    //int input = getchar_timeout_us(0);
+    //if (input == '1') {
+        pio_sm_exec(pio, sm, pio_encode_set(pio_x, 1));
+    //}
+    //if (input == '0') {
+    //    pio_sm_exec(pio, sm, pio_encode_set(pio_x, 0));
+    //}
+        FIFO_to_USB(pio, sm);
     }
+
 
     return 0;
 }
-
 
