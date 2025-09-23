@@ -55,7 +55,8 @@ void input_program_init(PIO pio,
    
     // Set this pin's GPIO function (connect PIO to the pad)
     for (uint pin = 2; pin < 2 + 14; pin++) {
-        pio_gpio_init(pio, pin);}       // ADC00-ADC13 pins
+        pio_gpio_init(pio, pin);
+        gpio_pull_up(pin);}       // ADC00-ADC13 pins
     pio_gpio_init(pio, 16);             // CDT pin
     pio_gpio_init(pio, 17);             // READY pin
     pio_gpio_init(pio, 18);             // INB pin
